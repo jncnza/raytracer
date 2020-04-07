@@ -1,8 +1,11 @@
-# Import 3rd party libraries
+# Import from local library
+from argparse import ArgumentParser
+
+# Import 3rd party library
 import numpy as np
 
 
-class Vector():
+class Vector:
     """A three element vector used in 3D graphics"""
 
     def __init__(self, xyz=[0.0, 0.0, 0.0]):
@@ -76,7 +79,7 @@ class Point(Vector):
         return f'Point([{self.x}, {self.y}, {self.z}])'
 
 
-class Ray():
+class Ray:
     """Simple ray class"""
 
     def __init__(self, origin, direction):
@@ -89,14 +92,14 @@ class Ray():
 
     def bg_color(self):
         t = self.direction.normalize().y
-        return t*WHITE + (1-t)*Color([0.5, 0.7, 1.0])
+        return t*WHITE + (1-t)*BLACK
 
     @classmethod
     def from_points(cls, tail, head):
         return cls(tail, head - tail)
 
 
-class Sphere():
+class Sphere:
     """A sphere is the only implemented 3D shape. Has center, radius and material"""
 
     def __init__(self, center, radius, material):
@@ -120,8 +123,19 @@ class Sphere():
         else:
             return None
 
+    def normal_at(self, point_on_sphere):
+        return (point_on_sphere - self.center).normalize()
 
-class Color():
+
+class Light:
+    """A source of light with a certain color"""
+
+    def __init__(self, position, color):
+        self.position = position
+        self.color = color
+
+
+class Color:
     """Simple color class"""
 
     def __init__(self, rgb=[0.0, 0.0, 0.0]):
@@ -158,29 +172,48 @@ class Color():
         return cls([r, g, b])
 
 
-class Scene():
-    """Renders 3D scene into a 2D scene using ray tracing"""
+class Material:
+    """Holds the color and constants related to its interaction with light"""
 
-    def __init__(self, camera, objects, width, height):
+    def __init__(self, color, ambient=0.05, diffuse=1, specular=1, specular_k=50):
+        self.color = color
+        self.ambient = ambient
+        self.diffuse = diffuse
+        self.specular = specular
+        self.specular_k = specular_k
+
+
+class Scene:
+    """Renders a 3D scene into a 2D image using ray tracing"""
+
+    def __init__(self):
+        self.camera = None
+        self.objects = []
+        self.lights = []
+
+    def set_camera(self, camera):
         self.camera = camera
-        self.objects = objects
-        self.width = width
-        self.height = height
 
-    def render(self):
-        aspect_ratio = self.width / self.height
+    def add_objects(self, *objects):
+        self.objects.extend(objects)
+
+    def add_lights(self, *lights):
+        self.lights.extend(lights)
+
+    def render(self, width, height):
+        ratio = width / height
 
         x0, x1 = -1, +1
-        x_step = (x1-x0) / (self.width-1)
+        x_step = (x1-x0) / (width-1)
 
-        y0, y1 = -1/aspect_ratio, +1/aspect_ratio
-        y_step = (y1-y0) / (self.height-1)
+        y0, y1 = -1/ratio, +1/ratio
+        y_step = (y1-y0) / (height-1)
 
-        image = Image(self.width, self.height)
+        image = Image(width, height)
 
-        for j in range(self.height):
+        for j in range(height):
             y = y0 + j*y_step
-            for i in range(self.width):
+            for i in range(width):
                 x = x0 + i*x_step
                 ray = Ray.from_points(self.camera, Point([x, y, 0]))
                 image.set_pixel(i, j, self.trace(ray))
@@ -207,10 +240,32 @@ class Scene():
         return point_hit, object_hit
 
     def color_at(self, ray, point_hit, object_hit):
-        return object_hit.material
+        normal = object_hit.normal_at(point_hit)
+        material = object_hit.material
+        to_cam = self.camera - point_hit
+
+        for light in self.lights:
+            to_light = Ray.from_points(point_hit, light.position)
+
+            # Diffuse shading (Lambert)
+            color = (
+                material.color
+                * material.diffuse
+                * max(0, normal @ to_light.direction)
+            )
+
+            # Specular shading (Blinn-Phong)
+            half_vector = (to_light.direction + to_cam).normalize()
+            color += (
+                light.color
+                * material.specular
+                * max(0, normal @ half_vector) ** material.specular_k
+            )
+
+        return color
 
 
-class Image():
+class Image:
     """Simple image class"""
 
     def __init__(self, width, height):
@@ -221,11 +276,24 @@ class Image():
     def set_pixel(self, x, y, color):
         self.pixels[y][x] = color
 
-    def write_ppm(self, ppm_file_path):
-        # Define auxiliary function
+    def write_ppm(self, ppm_file_path=None):
+        # Define auxiliary functions
+        def get_path():
+            """Get the user input"""
+
+            parser = ArgumentParser()
+            parser.add_argument('Image',
+                                metavar='path',
+                                help='path to the image')
+
+            return parser.parse_args().Image
+
         def to_byte(color):
             """Converts floats between 0 and 1 into ints between 0 and 255"""
             return [int(max(min(round(val * 255), 255), 0)) for val in color.rgb]
+
+        if ppm_file_path == None:
+            ppm_file_path = get_path()
 
         if ppm_file_path.endswith('.ppm'):
             with open(ppm_file_path, 'w') as ppm_file:
@@ -241,7 +309,10 @@ class Image():
             raise SyntaxError('Image must be a ppm file.')
 
 
-# Define some constants
+# Points
+ORIGIN = Point([0, 0, 0])
+
+# Colors
 RED = Color.from_hex('#FF0000')
 GREEN = Color.from_hex('#00FF00')
 BLUE = Color.from_hex('#0000FF')
