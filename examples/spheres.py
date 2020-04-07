@@ -1,5 +1,5 @@
 # Import local libraries
-import raytracing as rt
+import raytracer as rt
 
 
 # Define some constants
