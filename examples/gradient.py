@@ -1,4 +1,4 @@
-import raytracing as rt
+import raytracer as rt
 
 
 WIDTH = 200
